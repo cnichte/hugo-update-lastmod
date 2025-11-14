@@ -29,7 +29,7 @@
     "bundles"
   ],
   "author": "Carsten Nichte",
-  "license": "MIT",
+  "license": "GPL-3.0-or-later",
   "dependencies": {
     "glob": "^11.0.3",
     "picocolors": "^1.0.0"
