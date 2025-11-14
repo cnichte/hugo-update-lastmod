@@ -46,3 +46,8 @@ Add `hugo-update-lastmod` skript in your workflow:
 Enjoy :-)
 
 The file hugo-update-lastmod.mjs is pure JavaScript, not TypeScript. Node.js can execute it directly as long as "type": "module" is in package.json  or the file has the extension .mjs.
+
+## Links
+
+- <https://github.com/cnichte/hugo-update-lastmod>
+- <https://www.npmjs.com/package/hugo-update-lastmod>
