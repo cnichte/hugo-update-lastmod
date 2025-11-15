@@ -17,6 +17,8 @@
  * 
  * @author Carsten Nichte, 2025
  */
+
+// bin/hugo-update-lastmod.mjs
 import { promises as fs, existsSync, statSync } from "fs";
 import path from "path";
 import { spawnSync } from "child_process";
@@ -151,10 +153,15 @@ async function getImageFiles(dir, maxDepth) {
   return files;
 }
 
-function getLastGitCommitDate(files) {
-  if (!files.length) return null;
+function getLastGitCommitDate(dir, files) {
+  const args = ["log", "-1", "--format=%cI", "--", dir];
 
-  const res = spawnSync("git", ["log", "-1", "--format=%cI", "--", ...files], {
+  // Optional: zusätzlich die aktuellen Bild-Dateien mitgeben (schadet nicht)
+  if (files && files.length) {
+    args.push(...files);
+  }
+
+  const res = spawnSync("git", args, {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "ignore"]
   });
@@ -171,13 +178,14 @@ async function processBundle(dir) {
 
   const files = await getImageFiles(dir, MAXDEPTH);
   if (files.length === 0) {
-    warn(`Keine Bilder in ${dir} – überspringe`);
-    return;
+    // Nur Hinweis – aber wir verwenden trotzdem die Git-Historie des Bundles
+    warn(`Keine Bilder in ${dir} – verwende Git-Historie des Bundles.`);
   }
 
-  const lastmod = getLastGitCommitDate(files);
+  // WICHTIG: jetzt das Verzeichnis an git log übergeben
+  const lastmod = getLastGitCommitDate(dir, files);
   if (!lastmod) {
-    warn(`Keine Commit-Infos zu Bildern in ${dir} – überspringe`);
+    warn(`Keine Commit-Infos zu ${dir} – überspringe`);
     return;
   }
 
