@@ -1,6 +1,6 @@
 {
   "name": "hugo-update-lastmod",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "Update Hugo bundle index.md lastmod based on image changes (git log)",
   "type": "module",
   "bin": {
