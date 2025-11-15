@@ -25,11 +25,19 @@ Important features:
 - lastmod decision depends only on mtime vs. lastmod,
   not on +/~/- (these are for information only).
 
-## Setup
+## Install
 
 ```bash
+npm i -D hugo-update-lastmod
+# or
 npm install --save-dev hugo-update-lastmod
+# or
+yarn add --dev hugo-update-lastmod
+# or
+pnpm add -D hugo-update-lastmod
 ```
+
+## Setup
 
 Create a `hugo-update-lastmod.config.json` in the root folder of your project:
   

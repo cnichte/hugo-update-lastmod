@@ -25,11 +25,11 @@
  */
 
 // bin/hugo-update-lastmod.mjs
+// bin/hugo-update-lastmod.mjs
 import { promises as fs, existsSync, statSync } from "fs";
 import path from "path";
 import pc from "picocolors";
 import { glob } from "glob";
-import { fileURLToPath } from "url";
 import { createRequire } from "module";
 
 const require = createRequire(import.meta.url);
@@ -102,7 +102,7 @@ const GIT_ADD_ENABLED = !!CONFIG.gitAdd;
 //
 // Struktur:
 // {
-//   version: 1,
+//   version: 2,
 //   bundles: {
 //     "content/galleries/wreckfest": {
 //       images: {
@@ -115,7 +115,6 @@ const GIT_ADD_ENABLED = !!CONFIG.gitAdd;
 // }
 
 const CACHE_PATH = path.resolve(".hugo-update-lastmod.cache.json");
-
 const CACHE_VERSION = 2;
 
 let cache = {
@@ -129,7 +128,6 @@ try {
     const parsed = JSON.parse(raw);
 
     if (parsed.version === CACHE_VERSION && parsed.bundles) {
-      // Nur übernehmen, wenn Version passt
       cache.bundles = parsed.bundles;
     } else {
       info(
@@ -448,18 +446,25 @@ async function processBundle(absDir, stats) {
   stats.totalChanged += changed;
   stats.totalDeleted += deleted;
 
-  // 3. max. mtime der aktuellen Bilder bestimmen
-  let maxMtimeMs = 0;
-  for (const key of currentKeys) {
-    const mtimeMs = currentImages[key].mtimeMs;
-    if (mtimeMs > maxMtimeMs) {
-      maxMtimeMs = mtimeMs;
-    }
+  const totalImgChanges = added + changed + deleted;
+
+  // 3. Wenn es KEINE Bildänderungen seit letztem Lauf gibt:
+  //    → lastmod bleibt wie es ist, wir aktualisieren nur den Cache.
+  if (totalImgChanges === 0) {
+    const raw = await fs.readFile(indexFile, "utf8");
+    const { currentLastmod } = parseFrontmatter(raw, relIndexFile);
+    ok(
+      `${relIndexFile} ist aktuell: ${
+        currentLastmod || "<kein lastmod>"
+      } [Bilder: +0, ~0, −0]`
+    );
+
+    stats.unchangedBundles++;
+    cache.bundles[relDir] = { images: currentImages };
+    return;
   }
 
-  const newLastmod = formatLocalISO(new Date(maxMtimeMs));
-
-  // 4. index.md einlesen und lastmod parsen
+  // 4. Es gibt Bild-Änderungen → wir setzen lastmod auf JETZT
   const raw = await fs.readFile(indexFile, "utf8");
   const { currentLastmod, fmLines, bodyLines, valid } = parseFrontmatter(
     raw,
@@ -472,15 +477,14 @@ async function processBundle(absDir, stats) {
     return;
   }
 
-  // 5. Entscheidung: lastmod aktualisieren?
-  const shouldUpdateLastmod = isNewerISO(newLastmod, currentLastmod);
-
+  const newLastmod = formatLocalISO(new Date());
   const summarySuffix = ` [Bilder: +${added}, ~${changed}, −${deleted}]`;
 
+  const shouldUpdateLastmod = isNewerISO(newLastmod, currentLastmod);
+
   if (!shouldUpdateLastmod) {
-    // lastmod ist bereits >= max mtime
     ok(
-      `${relIndexFile} ist aktuell: ${
+      `${relIndexFile} hat bereits aktuelles lastmod: ${
         currentLastmod || "<kein lastmod>"
       }${summarySuffix}`
     );
@@ -502,14 +506,13 @@ async function processBundle(absDir, stats) {
       await fs.writeFile(indexFile, newContent, "utf8");
 
       if (GIT_ADD_ENABLED) {
-        // Git optional – falls du es später wieder nutzen willst
         const { spawnSync } = await import("child_process");
         spawnSync("git", ["add", relIndexFile], { stdio: "ignore" });
       }
     }
   }
 
-  // 6. Cache *immer* mit aktuellem Bestand aktualisieren
+  // 5. Cache *immer* mit aktuellem Bestand aktualisieren
   cache.bundles[relDir] = { images: currentImages };
 }
 
