@@ -11,8 +11,7 @@ In detail
 - For each bundle:
   - Compare image inventory with last run (cache)
   - Count changes: + added, ~ changed, − deleted
-  - Determine max. mtime of all images
-  - Update lastmod in index.md if max. mtime > current lastmod
+  - Insert or Update lastmod Property in index.md Frontmatter.
 - Output:
   - Per bundle: Status + image diffs
   - Global: Total number of bundles and image changes
@@ -20,10 +19,8 @@ In detail
 
 Important features:
 
-- No Git necessary – everything is based on the file system (mtime, size).
+- No Git necessary – everything is based on the file system (hash, size).
 - Cache is always updated (even with --dry-run).
-- lastmod decision depends only on mtime vs. lastmod,
-  not on +/~/- (these are for information only).
 
 ## Install
 

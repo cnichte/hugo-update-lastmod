@@ -9,28 +9,27 @@
  *   - For each bundle:
  *       - Compare image inventory with last run (cache)
  *       - Count changes: + added, ~ changed, − deleted
- *       - Determine max. mtime of all images
- *      - Update lastmod in index.md if max. mtime > current lastmod
+ *      - Update lastmod in index.md
  *   - Output:
  *       * Per bundle: Status + image diffs
  *       * Global: Total number of bundles and image changes
  *
  * Important features:
- *   - No Git necessary – everything is based on the file system (mtime, size).
+ *   - No Git necessary – everything is based on the file system (hash, size).
  *   - Cache is always updated (even with --dry-run).
- *   - lastmod decision depends only on mtime vs. lastmod,
+ *   - lastmod decision depends only on hash and size,
  *     not on +/~/- (these are for information only).
  *
  * @author Carsten Nichte, 2025
  */
 
 // bin/hugo-update-lastmod.mjs
-// bin/hugo-update-lastmod.mjs
-import { promises as fs, existsSync, statSync } from "fs";
+import { promises as fs, existsSync, statSync, createReadStream } from "fs";
 import path from "path";
 import pc from "picocolors";
 import { glob } from "glob";
 import { createRequire } from "module";
+import { createHash } from "crypto";
 
 const require = createRequire(import.meta.url);
 const pkg = require("../package.json");
@@ -44,7 +43,6 @@ const DRY_RUN = ARGS.includes("--dry-run") || ARGS.includes("-d");
 
 // ---------------------------------------------------------
 // Config laden
-// Sucht zuerst hugo-update-lastmod.config.json, dann lastmod.config.json
 // ---------------------------------------------------------
 
 const CONFIG_CANDIDATES = [
@@ -67,7 +65,7 @@ let CONFIG = {
   extensions: ["jpg", "jpeg", "png", "webp", "avif"],
   maxDepth: 1,
   frontmatterDelim: "---",
-  gitAdd: true, // bleibt drin, falls du später Git wieder nutzen willst
+  gitAdd: true,
 };
 
 try {
@@ -97,16 +95,16 @@ const FRONTMATTER_DELIM = CONFIG.frontmatterDelim || "---";
 const GIT_ADD_ENABLED = !!CONFIG.gitAdd;
 
 // ---------------------------------------------------------
-// Cache
+// Cache mit Checksummen
 // ---------------------------------------------------------
 //
-// Struktur:
+// Struktur (Version 3!):
 // {
-//   version: 2,
+//   version: 3,
 //   bundles: {
 //     "content/galleries/wreckfest": {
 //       images: {
-//         "content/galleries/wreckfest/img1.jpg": { mtimeMs: 123, size: 456 },
+//         "content/galleries/wreckfest/img1.jpg": { hash: "...", size: 123 },
 //         ...
 //       }
 //     },
@@ -115,7 +113,7 @@ const GIT_ADD_ENABLED = !!CONFIG.gitAdd;
 // }
 
 const CACHE_PATH = path.resolve(".hugo-update-lastmod.cache.json");
-const CACHE_VERSION = 2;
+const CACHE_VERSION = 3;
 
 let cache = {
   version: CACHE_VERSION,
@@ -212,10 +210,18 @@ function err(msg) {
 // Helper-Funktionen
 // ---------------------------------------------------------
 
+async function hashFile(absPath) {
+  return new Promise((resolve, reject) => {
+    const hash = createHash("sha256");
+    const stream = createReadStream(absPath);
+    stream.on("error", reject);
+    stream.on("data", (chunk) => hash.update(chunk));
+    stream.on("end", () => resolve(hash.digest("hex")));
+  });
+}
+
 /**
  * Liefert alle Bilddateien (relative Pfade) in einem Verzeichnis (rekursiv, mit maxDepth).
- * current: absolutes Verzeichnis
- * maxDepth: maximale Tiefe ab start-Dir
  */
 async function getImageFiles(dir, maxDepth) {
   const files = [];
@@ -246,7 +252,7 @@ async function getImageFiles(dir, maxDepth) {
 
 /**
  * Scannt ein Bundle-Verzeichnis und gibt eine Map
- *   { relPath: { mtimeMs, size } }
+ *   { relPath: { hash, size } }
  * zurück.
  */
 async function scanImagesForBundle(absDir, maxDepth) {
@@ -254,14 +260,16 @@ async function scanImagesForBundle(absDir, maxDepth) {
   const result = {};
 
   for (const rel of files) {
+    const abs = path.resolve(rel);
     try {
-      const st = statSync(path.resolve(rel));
+      const st = statSync(abs);
+      const hash = await hashFile(abs);
       result[rel] = {
-        mtimeMs: st.mtimeMs,
+        hash,
         size: st.size,
       };
     } catch {
-      // Datei könnte währenddessen verschwunden sein – einfach überspringen
+      // Datei könnte verschwunden sein – überspringen
     }
   }
 
@@ -271,7 +279,7 @@ async function scanImagesForBundle(absDir, maxDepth) {
 /**
  * Vergleicht zwei Image-Maps (prev vs current) und liefert:
  *   - added: Anzahl neuer Dateien
- *   - changed: Anzahl geänderter Dateien (mtimeMs oder size unterschiedlich)
+ *   - changed: Anzahl geänderter Dateien (Hash oder Größe unterschiedlich)
  *   - deleted: Anzahl gelöschter Dateien
  */
 function diffImages(prevImages, currentImages) {
@@ -288,7 +296,7 @@ function diffImages(prevImages, currentImages) {
     } else {
       const prev = prevImages[key];
       const curr = currentImages[key];
-      if (prev.mtimeMs !== curr.mtimeMs || prev.size !== curr.size) {
+      if (prev.hash !== curr.hash || prev.size !== curr.size) {
         changed++;
       }
     }
@@ -305,12 +313,6 @@ function diffImages(prevImages, currentImages) {
 
 /**
  * Frontmatter aus index.md parsen und lastmod extrahieren.
- * Rückgabe:
- *   {
- *     currentLastmod: string | "",
- *     fmLines: string[],
- *     bodyLines: string[]
- *   }
  */
 function parseFrontmatter(content, indexFile) {
   const lines = content.split("\n");
@@ -378,8 +380,7 @@ function buildNewContent(fmLines, bodyLines, newLastmod) {
 }
 
 /**
- * Formatiert einen Date als ISO-String mit lokaler Zeitzone (wie Git %cI),
- * z.B. 2025-11-15T12:43:41+01:00
+ * Formatiert Date als ISO-String mit lokaler Zeitzone.
  */
 function formatLocalISO(date) {
   const pad = (n) => String(n).padStart(2, "0");
@@ -391,7 +392,7 @@ function formatLocalISO(date) {
   const minute = pad(date.getMinutes());
   const second = pad(date.getSeconds());
 
-  const offsetMinutes = -date.getTimezoneOffset(); // z.B. 60 für +01:00
+  const offsetMinutes = -date.getTimezoneOffset();
   const sign = offsetMinutes >= 0 ? "+" : "-";
   const abs = Math.abs(offsetMinutes);
   const offH = pad(Math.floor(abs / 60));
@@ -401,12 +402,10 @@ function formatLocalISO(date) {
 }
 
 /**
- * Vergleich zweier ISO-Strings (oder leerer Strings).
- * Gibt true zurück, wenn newVal „später“ ist als currentVal.
+ * Vergleich zweier ISO-Strings.
  */
 function isNewerISO(newVal, currentVal) {
   if (!currentVal) return true;
-  // Vergleich als String reicht, weil ISO-8601 lexikographisch sortierbar ist
   return newVal > currentVal;
 }
 
@@ -424,19 +423,18 @@ async function processBundle(absDir, stats) {
     return;
   }
 
-  // 1. Aktuellen Bildbestand einlesen
+  // 1. Aktuellen Bildbestand (mit Hash) einlesen
   const currentImages = await scanImagesForBundle(absDir, MAXDEPTH);
   const currentKeys = Object.keys(currentImages);
 
   if (currentKeys.length === 0) {
     warn(`Keine Bilder in ${relDir} – überspringe`);
     stats.noImageBundles++;
-    // Cache trotzdem aktualisieren (leeres Set)
     cache.bundles[relDir] = { images: {} };
     return;
   }
 
-  // 2. Vorherigen Bildbestand aus Cache
+  // 2. Vorheriger Bildbestand aus Cache
   const prevBundle = cache.bundles[relDir] || { images: {} };
   const prevImages = prevBundle.images || {};
 
@@ -448,8 +446,7 @@ async function processBundle(absDir, stats) {
 
   const totalImgChanges = added + changed + deleted;
 
-  // 3. Wenn es KEINE Bildänderungen seit letztem Lauf gibt:
-  //    → lastmod bleibt wie es ist, wir aktualisieren nur den Cache.
+  // 3. Keine Bildänderungen: lastmod bleibt
   if (totalImgChanges === 0) {
     const raw = await fs.readFile(indexFile, "utf8");
     const { currentLastmod } = parseFrontmatter(raw, relIndexFile);
@@ -464,7 +461,7 @@ async function processBundle(absDir, stats) {
     return;
   }
 
-  // 4. Es gibt Bild-Änderungen → wir setzen lastmod auf JETZT
+  // 4. Es gibt Bild-Änderungen → lastmod = jetzt
   const raw = await fs.readFile(indexFile, "utf8");
   const { currentLastmod, fmLines, bodyLines, valid } = parseFrontmatter(
     raw,
@@ -472,7 +469,6 @@ async function processBundle(absDir, stats) {
   );
 
   if (!valid) {
-    // Cache trotzdem aktualisieren
     cache.bundles[relDir] = { images: currentImages };
     return;
   }
@@ -512,7 +508,6 @@ async function processBundle(absDir, stats) {
     }
   }
 
-  // 5. Cache *immer* mit aktuellem Bestand aktualisieren
   cache.bundles[relDir] = { images: currentImages };
 }
 
@@ -563,7 +558,6 @@ async function main() {
     );
   }
 
-  // Cache immer speichern – auch bei DRY_RUN
   await fs.writeFile(
     CACHE_PATH,
     JSON.stringify(
