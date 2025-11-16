@@ -31,8 +31,14 @@ import { glob } from "glob";
 import { createRequire } from "module";
 import { createHash } from "crypto";
 
+// get Version
 const require = createRequire(import.meta.url);
 const pkg = require("../package.json");
+
+const hr1 = () => "─".repeat(65); // horizontal line -
+const hr2 = () => "=".repeat(65); // horizontal line =
+const tab_a = () => " ".repeat(3); // indentation for formatting the terminal output.
+const tab_b = () => " ".repeat(6);
 
 // ---------------------------------------------------------
 // CLI-Argumente / Flags
@@ -143,26 +149,25 @@ try {
 // ---------------------------------------------------------
 
 function header() {
-  console.log("\n" + "-".repeat(65));
-  console.log(pc.bold(`🏃  hugo-update-lastmod  v${pkg.version} DEVELOP`));
+  console.log("\n" + hr2());
+  console.log(pc.bold(`🏃 hugo-update-lastmod v${pkg.version}`));
   if (CONFIG_PATH) {
     console.log(
-      `   Config:      ${pc.cyan(path.relative(process.cwd(), CONFIG_PATH))}`
+      `   Config: ${pc.cyan(path.relative(process.cwd(), CONFIG_PATH))}`
     );
   } else {
-    console.log(
-      `   Config:      ${pc.yellow("Default (keine Datei gefunden)")}`
-    );
+    console.log(`   Config: ${pc.yellow("Default (keine Datei gefunden)")}`);
   }
   console.log(
     `   Directories: ${pc.cyan(TARGET_DIRS.join(", "))}\n` +
-      `   MaxDepth:    ${pc.cyan(String(MAXDEPTH))}\n` +
-      `   Extensions:  ${pc.cyan(EXTENSIONS.join(", "))}\n` +
-      `   git add:     ${pc.cyan(GIT_ADD_ENABLED ? "yes" : "no")}\n`
+      `   MaxDepth: ${pc.cyan(String(MAXDEPTH))}\n` +
+      `   Extensions: ${pc.cyan(EXTENSIONS.join(", "))}\n` +
+      `   git add: ${pc.cyan(GIT_ADD_ENABLED ? "yes" : "no")}`
   );
   if (DRY_RUN) {
-    console.log(`   Mode:        ${pc.yellow("DRY-RUN (keine Änderungen)")}\n`);
+    console.log(`   Mode: ${pc.yellow("DRY-RUN (keine Änderungen)")}`);
   }
+  console.log(hr1());
 }
 
 function footer(stats) {
@@ -178,12 +183,12 @@ function footer(stats) {
 
   console.log(pc.bold(pc.green("✅ Fertig: lastmod ggf. aktualisiert.")));
   console.log(
-    `   Bundles:     ${totalBundles} (aktualisiert: ${updatedBundles}, unverändert: ${unchangedBundles}, ohne Bilder: ${noImageBundles})`
+    `   Bundles: ${totalBundles} (aktualisiert: ${updatedBundles}, unverändert: ${unchangedBundles}, ohne Bilder: ${noImageBundles})`
   );
   console.log(
     `   Bild-Änderungen (seit letztem Lauf): ${totalAdded} hinzugefügt, ${totalChanged} geändert, ${totalDeleted} gelöscht`
   );
-  console.log("-".repeat(65) + "\n");
+  console.log(hr2());
 }
 
 function info(msg) {
@@ -204,6 +209,26 @@ function note(msg) {
 
 function err(msg) {
   console.log(pc.red("❌ "), msg);
+}
+
+// Farb-Helfer
+function colorPath(p) {
+  return pc.white(p);
+}
+function colorStatusCurrent() {
+  return pc.green("ist aktuell");
+}
+function colorStatusUpdate() {
+  return pc.yellow("→ Aktualisiere lastmod");
+}
+function colorStatusError() {
+  return pc.red("Fehler");
+}
+function colorDate(d) {
+  return pc.white(d);
+}
+function colorImgSummary(s) {
+  return pc.blue(s);
 }
 
 // ---------------------------------------------------------
@@ -450,10 +475,12 @@ async function processBundle(absDir, stats) {
   if (totalImgChanges === 0) {
     const raw = await fs.readFile(indexFile, "utf8");
     const { currentLastmod } = parseFrontmatter(raw, relIndexFile);
-    ok(
-      `${relIndexFile} ist aktuell: ${
-        currentLastmod || "<kein lastmod>"
-      } [Bilder: +0, ~0, −0]`
+    console.log(
+      pc.green("✔️ ") +
+        `${colorPath(relIndexFile)} ${colorStatusCurrent()}: ${colorDate(
+          currentLastmod || "<kein lastmod>"
+        )} ` +
+        colorImgSummary("Bilder [+0 ~0 −0]")
     );
 
     stats.unchangedBundles++;
@@ -474,23 +501,27 @@ async function processBundle(absDir, stats) {
   }
 
   const newLastmod = formatLocalISO(new Date());
-  const summarySuffix = ` [Bilder: +${added}, ~${changed}, −${deleted}]`;
+  const summarySuffix = ` Bilder: [+${added} ~${changed} −${deleted}]`;
 
   const shouldUpdateLastmod = isNewerISO(newLastmod, currentLastmod);
 
   if (!shouldUpdateLastmod) {
-    ok(
-      `${relIndexFile} hat bereits aktuelles lastmod: ${
+    console.log(
+      pc.green("✔️ "),
+      `${colorPath(relIndexFile)} ${colorStatusCurrent()}: ${colorDate(
         currentLastmod || "<kein lastmod>"
-      }${summarySuffix}`
+      )} `,
+      colorImgSummary(summarySuffix)
     );
     stats.unchangedBundles++;
   } else {
     stats.updatedBundles++;
-    note(
-      `${relIndexFile} → Aktualisiere lastmod: ${
+    console.log(
+      pc.yellow("📝 "),
+      `${colorPath(relIndexFile)} ${colorStatusUpdate()}: ${colorDate(
         currentLastmod || "<leer>"
-      } → ${newLastmod}${summarySuffix}`
+      )} → ${colorDate(newLastmod)} `,
+      colorImgSummary(summarySuffix)
     );
 
     if (DRY_RUN) {
