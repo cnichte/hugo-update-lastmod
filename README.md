@@ -20,7 +20,6 @@ In detail
 Important features:
 
 - No Git necessary – everything is based on the file system (hash, size).
-- Cache is always updated (even with --dry-run).
 
 ## Install
 

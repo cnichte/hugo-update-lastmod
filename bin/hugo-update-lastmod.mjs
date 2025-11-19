@@ -589,18 +589,22 @@ async function main() {
     );
   }
 
-  await fs.writeFile(
-    CACHE_PATH,
-    JSON.stringify(
-      {
-        version: CACHE_VERSION,
-        bundles: cache.bundles,
-      },
-      null,
-      2
-    ),
-    "utf8"
-  );
+  if (!DRY_RUN) {
+    await fs.writeFile(
+      CACHE_PATH,
+      JSON.stringify(
+        {
+          version: CACHE_VERSION,
+          bundles: cache.bundles,
+        },
+        null,
+        2
+      ),
+      "utf8"
+    );
+  } else {
+    info("DRY-RUN: Cache-Datei wurde nicht aktualisiert.");
+  }
 
   footer(stats);
 }
